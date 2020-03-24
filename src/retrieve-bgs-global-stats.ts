@@ -22,14 +22,21 @@ export default async (event): Promise<any> => {
 			heroStatsDbResults && heroStatsDbResults.length,
 			heroStatsDbResults && heroStatsDbResults.length > 0 && heroStatsDbResults[0],
 		);
-		const heroStats = heroStatsDbResults.map(
-			result =>
-				({
-					id: result.heroCardId,
-					averagePosition: result.averagePosition,
-					popularity: result.popularity,
-				} as BgsGlobalHeroStat),
-		);
+		const heroStats = [
+			...heroStatsDbResults.map(
+				result =>
+					({
+						id: result.heroCardId,
+						averagePosition: result.averagePosition,
+						popularity: result.popularity,
+						top4: result.top4,
+						top1: result.top1,
+					} as BgsGlobalHeroStat),
+			),
+			{
+				id: 'average',
+			},
+		];
 
 		// Tribes stats
 		const tribeDateQuery = `
