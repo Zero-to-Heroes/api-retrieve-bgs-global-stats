@@ -31,6 +31,7 @@ export default async (event): Promise<any> => {
 						popularity: result.popularity,
 						top4: result.top4,
 						top1: result.top1,
+						tier: result.tier,
 					} as BgsGlobalHeroStat),
 			),
 			{
