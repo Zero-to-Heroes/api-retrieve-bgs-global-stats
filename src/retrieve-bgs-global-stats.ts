@@ -11,9 +11,9 @@ export default async (event): Promise<any> => {
 
 		// First get the list of active heroes
 		const heroesDateQuery = `
-			SELECT date FROM bgs_hero_stats ORDER BY id desc limit 1
+			SELECT date FROM bgs_hero_stats WHERE date IS NOT NULL ORDER BY id desc limit 1 
 		`;
-		console.log('heroesDateQuery', await mysql.query(heroesDateQuery));
+		console.log('heroesDateQuery', heroesDateQuery, await mysql.query(heroesDateQuery));
 		const heroesLastDate: Date = (await mysql.query(heroesDateQuery))[0].date;
 		console.log('heroesLastDate', heroesLastDate);
 		const allHeroesQuery = `
@@ -110,10 +110,13 @@ export default async (event): Promise<any> => {
 			const relevantInfo = warbandDbResults.filter(warbandStat => warbandStat.heroCardId === stat.id);
 			return {
 				...stat,
-				warbandStats: relevantInfo.map(info => ({
-					turn: info.turn,
-					totalStats: info.statsDelta,
-				})),
+				warbandStats: relevantInfo
+					// In the endgame the results are skewed too much by the outliers and by the fact that some heroes never make it there
+					.filter(info => info.turn <= 15)
+					.map(info => ({
+						turn: info.turn,
+						totalStats: info.statsDelta,
+					})),
 			} as BgsGlobalHeroStat;
 		});
 		// console.log('hero stats with warbnd stats', heroStatsWithWarband);

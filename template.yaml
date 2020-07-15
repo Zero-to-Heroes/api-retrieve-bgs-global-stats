@@ -25,6 +25,8 @@ Resources:
                 - AWSLambdaVPCAccessExecutionRole
                 - AmazonSESFullAccess
                 - SecretsManagerReadWrite
+            Tags:
+                LambdaName: api-retrieve-bgs-global-stats
             Events:
                 GetMatchStatsResource:
                     Type: Api
