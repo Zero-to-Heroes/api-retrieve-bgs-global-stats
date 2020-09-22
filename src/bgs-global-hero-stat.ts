@@ -7,4 +7,5 @@ export class BgsGlobalHeroStat {
 	tier: string;
 	tribesStat: readonly { tribe: string; percent: number }[];
 	warbandStats: readonly { turn: number; totalStats: number }[];
+	combatWinrate: readonly { turn: number; winrate: number }[];
 }
