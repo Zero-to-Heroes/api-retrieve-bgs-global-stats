@@ -9,12 +9,15 @@ import { getConnection } from './db/rds';
 // [1]: https://aws.amazon.com/blogs/compute/node-js-8-10-runtime-now-available-in-aws-lambda/
 export default async (event): Promise<any> => {
 	try {
+		const input = event.body ? JSON.parse(event.body) : null;
 		const mysql = await getConnection();
+
+		const useNewTable = input?.useNewTable;
 
 		const allHeroes = await getAllHeroes(mysql);
 		const heroStats: readonly BgsGlobalHeroStat[] = await getHeroStats(mysql, allHeroes);
 		const tribesDbResults: readonly any[] = await getTribesDbResults(mysql);
-		const warbandStatsDbResults: readonly any[] = await getWarbandStatsDbResults(mysql);
+		const warbandStatsDbResults: readonly any[] = await getWarbandStatsDbResults(useNewTable, mysql);
 		const winrateDbResults: readonly any[] = await getWinrateDbResults(mysql);
 
 		const heroStatsWithTribes = heroStats.map(stat => {
@@ -31,7 +34,7 @@ export default async (event): Promise<any> => {
 		const heroStatsWithWarband = heroStatsWithTribes.map(stat => {
 			const warbandStatInfo = warbandStatsDbResults.filter(warbandStat => warbandStat.heroCardId === stat.id);
 			const winrateInfo = winrateDbResults.filter(warbandStat => warbandStat.heroCardId === stat.id);
-			console.log('winrateInfo for', stat.id, winrateInfo);
+			// console.log('winrateInfo for', stat.id, winrateInfo);
 			return {
 				...stat,
 				warbandStats: !warbandStatInfo
@@ -41,7 +44,7 @@ export default async (event): Promise<any> => {
 							.filter(info => info.turn <= 15)
 							.map(info => ({
 								turn: info.turn,
-								totalStats: info.statsDelta,
+								totalStats: info.statsDelta || info.totalStats,
 							})),
 				combatWinrate: !winrateInfo
 					? []
@@ -127,13 +130,14 @@ const getWinrateDbResults = async (mysql): Promise<readonly any[]> => {
 	return dbResults;
 };
 
-const getWarbandStatsDbResults = async (mysql): Promise<readonly any[]> => {
+const getWarbandStatsDbResults = async (useNewTable: boolean, mysql): Promise<readonly any[]> => {
+	const table = useNewTable ? 'bgs_hero_warband_stats_2' : 'bgs_hero_warband_stats';
 	const dateQuery = `
-		SELECT creationDate FROM bgs_hero_warband_stats ORDER BY id desc limit 1
+		SELECT creationDate FROM ${table} ORDER BY id desc limit 1
 	`;
 	const lastDate: Date = (await mysql.query(dateQuery))[0].creationDate;
 	const statsQuery = `
-		SELECT * FROM bgs_hero_warband_stats 
+		SELECT * FROM ${table} 
 		WHERE creationDate = '${lastDate.toISOString()}'
 		ORDER BY heroCardId, turn ASC
 	`;
