@@ -9,10 +9,10 @@ import { getConnection } from './db/rds';
 // [1]: https://aws.amazon.com/blogs/compute/node-js-8-10-runtime-now-available-in-aws-lambda/
 export default async (event): Promise<any> => {
 	try {
-		const input = event.body ? JSON.parse(event.body) : null;
+		// const input = event.body ? JSON.parse(event.body) : null;
 		const mysql = await getConnection();
 
-		const useNewTable = input?.useNewTable;
+		const useNewTable = true; //input?.useNewTable;
 
 		const allHeroes = await getAllHeroes(mysql);
 		const heroStats: readonly BgsGlobalHeroStat[] = await getHeroStats(mysql, allHeroes);
