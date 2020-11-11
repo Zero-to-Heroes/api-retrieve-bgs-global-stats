@@ -9,14 +9,14 @@ let connection, connectionPromise;
 
 const connect = async (): Promise<serverlessMysql.ServerlessMysql> => {
 	const secretRequest: GetSecretValueRequest = {
-		SecretId: 'rds-connection',
+		SecretId: 'rds-battlegrounds',
 	};
 	const secret: SecretInfo = await getSecret(secretRequest);
 	const config = {
 		host: secret.host,
 		user: secret.username,
 		password: secret.password,
-		database: 'replay_summary',
+		database: 'player_match_recap',
 		port: secret.port,
 	};
 	connection = MySQLServerless({ config });

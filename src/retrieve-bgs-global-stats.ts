@@ -1,8 +1,11 @@
+/* eslint-disable @typescript-eslint/no-empty-interface */
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { gzipSync } from 'zlib';
 import { BgsGlobalHeroStat } from './bgs-global-hero-stat';
 import { BgsGlobalStats } from './bgs-global-stats';
 import { getConnection } from './db/rds';
+import { getConnection as getConnectionBgs } from './db/rds-bgs';
+import { groupByFunction, http } from './utils';
 
 // This example demonstrates a NodeJS 8.10 async handler[1], however of course you could use
 // the more traditional callback-style handler.
@@ -10,15 +13,15 @@ import { getConnection } from './db/rds';
 export default async (event): Promise<any> => {
 	try {
 		// const input = event.body ? JSON.parse(event.body) : null;
+		const mysqlBgs = await getConnectionBgs();
 		const mysql = await getConnection();
 
-		const useNewTable = true; //input?.useNewTable;
-
-		const allHeroes = await getAllHeroes(mysql);
-		const heroStats: readonly BgsGlobalHeroStat[] = await getHeroStats(mysql, allHeroes);
-		const tribesDbResults: readonly any[] = await getTribesDbResults(mysql);
-		const warbandStatsDbResults: readonly any[] = await getWarbandStatsDbResults(useNewTable, mysql);
-		const winrateDbResults: readonly any[] = await getWinrateDbResults(mysql);
+		const allHeroes = await getAllHeroes(mysqlBgs);
+		const heroStats: readonly BgsGlobalHeroStat[] = await getHeroStats(mysqlBgs, allHeroes);
+		// TODO: test the updated endpoint
+		const tribesDbResults: readonly TribeStat[] = await getTribesDbResults(mysql);
+		const warbandStatsDbResults: readonly WarbandStat[] = await getWarbandStatsDbResults(mysql);
+		const winrateDbResults: readonly WinrateStat[] = await getWinrateDbResults(mysql);
 
 		const heroStatsWithTribes = heroStats.map(stat => {
 			const relevantTribes = tribesDbResults.filter(tribeStat => tribeStat.heroCardId === stat.id);
@@ -44,7 +47,7 @@ export default async (event): Promise<any> => {
 							.filter(info => info.turn <= 15)
 							.map(info => ({
 								turn: info.turn,
-								totalStats: info.statsDelta || info.totalStats,
+								totalStats: info.totalStats,
 							})),
 				combatWinrate: !winrateInfo
 					? []
@@ -63,6 +66,7 @@ export default async (event): Promise<any> => {
 		} as BgsGlobalStats;
 
 		const stringResults = JSON.stringify({ result });
+		console.log('results', stringResults);
 		const gzippedResults = gzipSync(stringResults).toString('base64');
 		console.log('compressed', stringResults.length, gzippedResults.length);
 		const response = {
@@ -116,47 +120,85 @@ const getHeroStats = async (mysql, allHeroes: string): Promise<readonly BgsGloba
 	return heroStats;
 };
 
-const getWinrateDbResults = async (mysql): Promise<readonly any[]> => {
-	const dateQuery = `
-		SELECT creationDate FROM bgs_hero_combat_winrate ORDER BY id desc limit 1
-	`;
-	const lastDate: Date = (await mysql.query(dateQuery))[0].creationDate;
+const getWinrateDbResults = async (mysql): Promise<readonly WinrateStat[]> => {
+	const periodStart = new Date(new Date().getTime() - 100 * 24 * 60 * 60 * 1000);
 	const statsQuery = `
-		SELECT * FROM bgs_hero_combat_winrate 
-		WHERE creationDate = '${lastDate.toISOString()}'
-		ORDER BY heroCardId, turn ASC
-	`;
-	const dbResults: readonly any[] = await mysql.query(statsQuery);
-	return dbResults;
-};
-
-const getWarbandStatsDbResults = async (useNewTable: boolean, mysql): Promise<readonly any[]> => {
-	const table = useNewTable ? 'bgs_hero_warband_stats_2' : 'bgs_hero_warband_stats';
-	const dateQuery = `
-		SELECT creationDate FROM ${table} ORDER BY id desc limit 1
-	`;
-	const lastDate: Date = (await mysql.query(dateQuery))[0].creationDate;
-	const statsQuery = `
-		SELECT * FROM ${table} 
-		WHERE creationDate = '${lastDate.toISOString()}'
-		ORDER BY heroCardId, turn ASC
-	`;
-	const dbResults: readonly any[] = await mysql.query(statsQuery);
-	return dbResults;
-};
-
-const getTribesDbResults = async (mysql): Promise<readonly any[]> => {
-	const tribeDateQuery = `
-		SELECT creationDate FROM bgs_hero_tribes_at_end ORDER BY id desc limit 1
-	`;
-	const tribeLastDate: Date = (await mysql.query(tribeDateQuery))[0].creationDate;
-	const tribesAtEndStatsQuery = `
-		SELECT * FROM bgs_hero_tribes_at_end 
-		WHERE creationDate = '${tribeLastDate.toISOString()}'
+		SELECT * FROM bgs_winrate 
+		WHERE periodStart >= '${periodStart.toISOString()}'
 		ORDER BY heroCardId ASC
 	`;
-	const tribesDbResults: readonly any[] = await mysql.query(tribesAtEndStatsQuery);
-	return tribesDbResults;
+	const rawDbResults: readonly WinrateDbRow[] = await mysql.query(statsQuery);
+	const resultsByHero = groupByFunction((stat: WinrateDbRow) => stat.heroCardId)(rawDbResults);
+	return Object.keys(resultsByHero)
+		.map(heroCardId => {
+			const statsForHero: readonly WinrateDbRow[] = resultsByHero[heroCardId];
+			const resultsByTurn = groupByFunction((stat: WinrateDbRow) => '' + stat.turn)(statsForHero);
+			return Object.keys(resultsByTurn).map(turn => {
+				const statsForTurn: readonly WinrateDbRow[] = resultsByTurn[turn];
+				const totalStatsForTurn = statsForTurn.map(stat => stat.totalValue).reduce((a, b) => a + b, 0) || 0;
+				const totalDataPointsForTurn = statsForTurn.map(stat => stat.dataPoints).reduce((a, b) => a + b, 0);
+				return {
+					heroCardId: heroCardId,
+					turn: +turn,
+					winrate: totalDataPointsForTurn ? totalStatsForTurn / totalDataPointsForTurn : 0,
+				} as WinrateStat;
+			});
+		})
+		.reduce((a, b) => a.concat(b), []);
+};
+
+const getWarbandStatsDbResults = async (mysql): Promise<readonly WarbandStat[]> => {
+	const periodStart = new Date(new Date().getTime() - 100 * 24 * 60 * 60 * 1000);
+	const statsQuery = `
+		SELECT * FROM bgs_warband_stats 
+		WHERE periodStart >= '${periodStart.toISOString()}'
+		ORDER BY heroCardId ASC
+	`;
+	const rawDbResults: readonly WarbandDbRow[] = await mysql.query(statsQuery);
+	const resultsByHero = groupByFunction((stat: WarbandDbRow) => stat.heroCardId)(rawDbResults);
+	return Object.keys(resultsByHero)
+		.map(heroCardId => {
+			const statsForHero: readonly WarbandDbRow[] = resultsByHero[heroCardId];
+			const resultsByTurn = groupByFunction((stat: WarbandDbRow) => '' + stat.turn)(statsForHero);
+			return Object.keys(resultsByTurn).map(turn => {
+				const statsForTurn: readonly WarbandDbRow[] = resultsByTurn[turn];
+				const totalStatsForTurn = statsForTurn.map(stat => stat.totalValue).reduce((a, b) => a + b, 0) || 0;
+				const totalDataPointsForTurn = statsForTurn.map(stat => stat.dataPoints).reduce((a, b) => a + b, 0);
+				return {
+					heroCardId: heroCardId,
+					turn: +turn,
+					totalStats: totalDataPointsForTurn ? totalStatsForTurn / totalDataPointsForTurn : 0,
+				} as WarbandStat;
+			});
+		})
+		.reduce((a, b) => a.concat(b), []);
+};
+
+const getTribesDbResults = async (mysql): Promise<readonly TribeStat[]> => {
+	const periodStart = new Date(new Date().getTime() - 100 * 24 * 60 * 60 * 1000);
+	const tribesAtEndStatsQuery = `
+		SELECT * FROM bgs_tribes_at_end 
+		WHERE periodStart >= '${periodStart.toISOString()}'
+		ORDER BY heroCardId ASC
+	`;
+	const rawTribesDbResults: readonly TribeDbRow[] = await mysql.query(tribesAtEndStatsQuery);
+	const resultsByHero = groupByFunction((stat: TribeDbRow) => stat.heroCardId)(rawTribesDbResults);
+	return Object.keys(resultsByHero)
+		.map(heroCardId => {
+			const statsForHero: readonly TribeDbRow[] = resultsByHero[heroCardId];
+			const totalStatsForHero = statsForHero.map(stat => stat.totalValue).reduce((a, b) => a + b, 0);
+			const resultsByTribe = groupByFunction((stat: any) => stat.tribe)(statsForHero);
+			return Object.keys(resultsByTribe).map(tribe => {
+				const statsForTribe: readonly TribeDbRow[] = resultsByTribe[tribe];
+				const totalStatsForTribe = statsForTribe.map(stat => stat.totalValue).reduce((a, b) => a + b, 0);
+				return {
+					heroCardId: heroCardId,
+					tribe: tribe,
+					percent: (100 * totalStatsForTribe) / totalStatsForHero,
+				} as TribeStat;
+			});
+		})
+		.reduce((a, b) => a.concat(b), []);
 };
 
 const getAllHeroes = async (mysql): Promise<string> => {
@@ -173,4 +215,50 @@ const getAllHeroes = async (mysql): Promise<string> => {
 	const allHeroesDbResult: readonly any[] = await mysql.query(allHeroesQuery);
 	const allHeroes: string = allHeroesDbResult.map(result => `'${result.heroCardId}'`).join(',');
 	return allHeroes;
+};
+
+interface TribeDbRow {
+	id: number;
+	periodStart: string;
+	heroCardId: string;
+	tribe: string;
+	dataPoints: number;
+	totalValue: number;
+}
+
+interface TribeStat {
+	heroCardId: string;
+	tribe: string;
+	percent: number;
+}
+
+interface WarbandDbRow {
+	id: number;
+	periodStart: string;
+	heroCardId: string;
+	turn: number;
+	dataPoints: number;
+	totalValue: number;
+}
+
+interface WinrateDbRow extends WarbandDbRow {}
+
+interface WarbandStat {
+	heroCardId: string;
+	turn: number;
+	// Caution: this is the total average warband stat
+	totalStats: number;
+}
+
+interface WinrateStat {
+	heroCardId: string;
+	turn: number;
+	winrate: number;
+}
+
+export const getLastPatch = async (): Promise<any> => {
+	const patchInfo = await http(`https://static.zerotoheroes.com/hearthstone/data/patches.json`);
+	const structuredPatch = JSON.parse(patchInfo);
+	const patchNumber = structuredPatch.currentDuelsMetaPatch;
+	return patchInfo.patches.find(patch => patch.number === patchNumber);
 };
