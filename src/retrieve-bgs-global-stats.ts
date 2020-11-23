@@ -7,6 +7,8 @@ import { getConnection } from './db/rds';
 import { getConnection as getConnectionBgs } from './db/rds-bgs';
 import { groupByFunction, http } from './utils';
 
+// TODO: extenralize that as a JSON
+
 // This example demonstrates a NodeJS 8.10 async handler[1], however of course you could use
 // the more traditional callback-style handler.
 // [1]: https://aws.amazon.com/blogs/compute/node-js-8-10-runtime-now-available-in-aws-lambda/
@@ -22,6 +24,7 @@ export default async (event): Promise<any> => {
 		const tribesDbResults: readonly TribeStat[] = await getTribesDbResults(mysql);
 		const warbandStatsDbResults: readonly WarbandStat[] = await getWarbandStatsDbResults(mysql);
 		const winrateDbResults: readonly WinrateStat[] = await getWinrateDbResults(mysql);
+		await mysql.end();
 
 		const heroStatsWithTribes = heroStats.map(stat => {
 			const relevantTribes = tribesDbResults.filter(tribeStat => tribeStat.heroCardId === stat.id);
