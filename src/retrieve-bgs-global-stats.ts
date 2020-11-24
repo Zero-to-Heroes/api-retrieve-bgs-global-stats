@@ -7,7 +7,7 @@ import { getConnection } from './db/rds';
 import { getConnection as getConnectionBgs } from './db/rds-bgs';
 import { groupByFunction, http } from './utils';
 
-// TODO: extenralize that as a JSON
+// TODO: delete once main versions are loaded
 
 // This example demonstrates a NodeJS 8.10 async handler[1], however of course you could use
 // the more traditional callback-style handler.
