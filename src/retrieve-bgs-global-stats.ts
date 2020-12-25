@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-empty-interface */
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { gzipSync } from 'zlib';
-import { BgsGlobalHeroStat } from './bgs-global-stat';
-import { BgsGlobalStats } from './bgs-global-stats';
+import { BgsGlobalHeroStat, BgsGlobalStats } from './bgs-global-stats';
 import { getConnection } from './db/rds';
 import { getConnection as getConnectionBgs } from './db/rds-bgs';
 import { groupByFunction, http } from './utils';
