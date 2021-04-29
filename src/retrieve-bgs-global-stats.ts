@@ -12,86 +12,75 @@ import { groupByFunction, http } from './utils';
 // the more traditional callback-style handler.
 // [1]: https://aws.amazon.com/blogs/compute/node-js-8-10-runtime-now-available-in-aws-lambda/
 export default async (event): Promise<any> => {
-	try {
-		// const input = event.body ? JSON.parse(event.body) : null;
-		const mysqlBgs = await getConnectionBgs();
-		const mysql = await getConnection();
+	// const input = event.body ? JSON.parse(event.body) : null;
+	const mysqlBgs = await getConnectionBgs();
+	const mysql = await getConnection();
 
-		const allHeroes = await getAllHeroes(mysqlBgs);
-		const heroStats: readonly BgsGlobalHeroStat[] = await getHeroStats(mysqlBgs, allHeroes);
-		// TODO: test the updated endpoint
-		const tribesDbResults: readonly TribeStat[] = await getTribesDbResults(mysql);
-		const warbandStatsDbResults: readonly WarbandStat[] = await getWarbandStatsDbResults(mysql);
-		const winrateDbResults: readonly WinrateStat[] = await getWinrateDbResults(mysql);
-		await mysql.end();
+	const allHeroes = await getAllHeroes(mysqlBgs);
+	const heroStats: readonly BgsGlobalHeroStat[] = await getHeroStats(mysqlBgs, allHeroes);
+	// TODO: test the updated endpoint
+	const tribesDbResults: readonly TribeStat[] = await getTribesDbResults(mysql);
+	const warbandStatsDbResults: readonly WarbandStat[] = await getWarbandStatsDbResults(mysql);
+	const winrateDbResults: readonly WinrateStat[] = await getWinrateDbResults(mysql);
+	await mysql.end();
 
-		const heroStatsWithTribes = heroStats.map(stat => {
-			const relevantTribes = tribesDbResults.filter(tribeStat => tribeStat.heroCardId === stat.id);
-			return {
-				...stat,
-				tribesStat: relevantTribes.map(tribe => ({
-					tribe: tribe.tribe.toLowerCase(),
-					percent: tribe.percent,
-				})),
-			} as BgsGlobalHeroStat;
-		});
+	const heroStatsWithTribes = heroStats.map(stat => {
+		const relevantTribes = tribesDbResults.filter(tribeStat => tribeStat.heroCardId === stat.id);
+		return {
+			...stat,
+			tribesStat: relevantTribes.map(tribe => ({
+				tribe: tribe.tribe.toLowerCase(),
+				percent: tribe.percent,
+			})),
+		} as BgsGlobalHeroStat;
+	});
 
-		const heroStatsWithWarband = heroStatsWithTribes.map(stat => {
-			const warbandStatInfo = warbandStatsDbResults.filter(warbandStat => warbandStat.heroCardId === stat.id);
-			const winrateInfo = winrateDbResults.filter(warbandStat => warbandStat.heroCardId === stat.id);
-			// console.log('winrateInfo for', stat.id, winrateInfo);
-			return {
-				...stat,
-				warbandStats: !warbandStatInfo
-					? []
-					: warbandStatInfo
-							// In the endgame the results are skewed too much by the outliers and by the fact that some heroes never make it there
-							.filter(info => info.turn <= 15)
-							.map(info => ({
-								turn: info.turn,
-								totalStats: info.totalStats,
-							})),
-				combatWinrate: !winrateInfo
-					? []
-					: winrateInfo
-							.filter(info => info.turn <= 18)
-							.map(info => ({
-								turn: info.turn,
-								winrate: info.winrate,
-							})),
-			} as BgsGlobalHeroStat;
-		});
-		// console.log('hero stats with warbnd stats', heroStatsWithWarband);
+	const heroStatsWithWarband = heroStatsWithTribes.map(stat => {
+		const warbandStatInfo = warbandStatsDbResults.filter(warbandStat => warbandStat.heroCardId === stat.id);
+		const winrateInfo = winrateDbResults.filter(warbandStat => warbandStat.heroCardId === stat.id);
+		// console.log('winrateInfo for', stat.id, winrateInfo);
+		return {
+			...stat,
+			warbandStats: !warbandStatInfo
+				? []
+				: warbandStatInfo
+						// In the endgame the results are skewed too much by the outliers and by the fact that some heroes never make it there
+						.filter(info => info.turn <= 15)
+						.map(info => ({
+							turn: info.turn,
+							totalStats: info.totalStats,
+						})),
+			combatWinrate: !winrateInfo
+				? []
+				: winrateInfo
+						.filter(info => info.turn <= 18)
+						.map(info => ({
+							turn: info.turn,
+							winrate: info.winrate,
+						})),
+		} as BgsGlobalHeroStat;
+	});
+	// console.log('hero stats with warbnd stats', heroStatsWithWarband);
 
-		const result = {
-			heroStats: heroStatsWithWarband,
-		} as BgsGlobalStats;
+	const result = {
+		heroStats: heroStatsWithWarband,
+	} as BgsGlobalStats;
 
-		const stringResults = JSON.stringify({ result });
-		console.log('results', stringResults);
-		const gzippedResults = gzipSync(stringResults).toString('base64');
-		console.log('compressed', stringResults.length, gzippedResults.length);
-		const response = {
-			statusCode: 200,
-			isBase64Encoded: true,
-			body: gzippedResults,
-			headers: {
-				'Content-Type': 'text/html',
-				'Content-Encoding': 'gzip',
-			},
-		};
-		// console.log('sending back success reponse');
-		return response;
-	} catch (e) {
-		console.error('issue retrieving stats', e);
-		const response = {
-			statusCode: 500,
-			isBase64Encoded: false,
-			body: JSON.stringify({ message: 'not ok', exception: e }),
-		};
-		console.log('sending back error reponse', response);
-		return response;
-	}
+	const stringResults = JSON.stringify({ result });
+	console.log('results', stringResults);
+	const gzippedResults = gzipSync(stringResults).toString('base64');
+	console.log('compressed', stringResults.length, gzippedResults.length);
+	const response = {
+		statusCode: 200,
+		isBase64Encoded: true,
+		body: gzippedResults,
+		headers: {
+			'Content-Type': 'text/html',
+			'Content-Encoding': 'gzip',
+		},
+	};
+	// console.log('sending back success reponse');
+	return response;
 };
 
 const getHeroStats = async (mysql, allHeroes: string): Promise<readonly BgsGlobalHeroStat[]> => {
